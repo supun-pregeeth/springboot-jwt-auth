@@ -1,4 +1,6 @@
 package com.supun.jwt.entity;
 
-public class Role {
+public enum Role {
+    USER,
+    ADMIN
 }
