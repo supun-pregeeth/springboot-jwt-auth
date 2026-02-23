@@ -19,7 +19,7 @@ public class RegisterRequest {
     private String password;
 
     @NotBlank
-    private String Role;
+    private String role;
 
 
 }

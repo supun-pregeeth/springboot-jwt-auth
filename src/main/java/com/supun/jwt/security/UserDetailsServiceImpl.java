@@ -1,8 +1,6 @@
 package com.supun.jwt.security;
 
-package com.example.jwtdemo.security;
-
-import com.example.jwtdemo.repo.UserRepository;
+import com.supun.jwt.repo.UserRepository;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.*;
 import org.springframework.stereotype.Service;

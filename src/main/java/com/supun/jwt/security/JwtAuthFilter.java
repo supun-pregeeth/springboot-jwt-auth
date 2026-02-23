@@ -1,7 +1,5 @@
 package com.supun.jwt.security;
 
-package com.example.jwtdemo.security;
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

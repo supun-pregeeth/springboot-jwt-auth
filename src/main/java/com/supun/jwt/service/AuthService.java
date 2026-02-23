@@ -9,13 +9,12 @@ import com.supun.jwt.entity.Role;
 import com.supun.jwt.repo.RefreshTokenRepository;
 import com.supun.jwt.repo.UserRepository;
 import com.supun.jwt.security.JwtService;
-import lombok.AllArgsConstructor;
-import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.Instant;
@@ -48,24 +47,26 @@ public class AuthService {
         this.refreshExpMs = refreshExpMs;
     }
 
+    @Transactional
     public void register(RegisterRequest req) {
-        if (users.existsByEmail(req.getEmail())) {
-            throw new IllegalArgumentException("Email already exists");
-        }
 
-        Role role;
-        try {
-            role = Role.valueOf(req.getRole().toUpperCase());
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid role. Use USER or ADMIN");
-        }
+        // Debug (optional)
+        System.out.println("REGISTER email=" + req.getEmail());
+        System.out.println("REGISTER role=" + req.getRole());
 
-        var user = new AppUser(
-                req.getEmail(),
-                encoder.encode(req.getPassword()),
-                Set.of(role)
-        );
-        users.save(user);
+        // 1) Create user
+        AppUser user = new AppUser();
+
+        // 2) Set fields
+        user.setEmail(req.getEmail());
+        user.setPasswordHash(encoder.encode(req.getPassword())); // ✅ correct
+
+        // 3) Set role
+        // If req.getRole() = "USER" or "ADMIN"
+        user.setRoles(Set.of(Role.valueOf(req.getRole().toUpperCase())));
+
+        // 4) Save
+        users.save(user); // ✅ correct repository name
     }
 
     public AuthResponse login(AuthRequest req) {
@@ -73,7 +74,7 @@ public class AuthService {
                 new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword())
         );
 
-        var user = users.findByEmail(req.getEmail()).orElseThrow();
+        AppUser user = users.findByEmail(req.getEmail()).orElseThrow();
         String access = jwtService.generateAccessToken(user.getEmail(), user.getRoles());
         String refresh = createRefreshToken(user);
 
@@ -81,7 +82,7 @@ public class AuthService {
     }
 
     public AuthResponse refresh(String refreshToken) {
-        var stored = refreshTokens.findByToken(refreshToken)
+        RefreshToken stored = refreshTokens.findByToken(refreshToken)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
 
         if (stored.getExpiresAt().isBefore(Instant.now())) {
@@ -89,7 +90,7 @@ public class AuthService {
             throw new IllegalArgumentException("Refresh token expired");
         }
 
-        var user = stored.getUser();
+        AppUser user = stored.getUser();
         String newAccess = jwtService.generateAccessToken(user.getEmail(), user.getRoles());
         return new AuthResponse(newAccess, refreshToken);
     }
