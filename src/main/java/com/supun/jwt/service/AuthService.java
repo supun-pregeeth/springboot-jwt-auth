@@ -1,114 +1,53 @@
 package com.supun.jwt.service;
 
-import com.supun.jwt.dto.AuthRequest;
-import com.supun.jwt.dto.AuthResponse;
-import com.supun.jwt.dto.RegisterRequest;
-import com.supun.jwt.entity.AppUser;
-import com.supun.jwt.entity.RefreshToken;
-import com.supun.jwt.entity.Role;
-import com.supun.jwt.repo.RefreshTokenRepository;
+import com.supun.jwt.dto.*;
+import com.supun.jwt.entity.User;
 import com.supun.jwt.repo.UserRepository;
 import com.supun.jwt.security.JwtService;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.security.SecureRandom;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.Set;
 
 @Service
 public class AuthService {
 
-    private final UserRepository users;
-    private final RefreshTokenRepository refreshTokens;
-    private final PasswordEncoder encoder;
-    private final AuthenticationManager authManager;
+    private final UserRepository userRepository;
     private final JwtService jwtService;
-    private final long refreshExpMs;
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    public AuthService(
-            UserRepository users,
-            RefreshTokenRepository refreshTokens,
-            PasswordEncoder encoder,
-            AuthenticationManager authManager,
-            JwtService jwtService,
-            @Value("${app.jwt.refresh-exp-ms}") long refreshExpMs
-    ) {
-        this.users = users;
-        this.refreshTokens = refreshTokens;
-        this.encoder = encoder;
-        this.authManager = authManager;
+    public AuthService(UserRepository userRepository,
+                       JwtService jwtService){
+
+        this.userRepository = userRepository;
         this.jwtService = jwtService;
-        this.refreshExpMs = refreshExpMs;
     }
 
-    @Transactional
-    public void register(RegisterRequest req) {
+    public AuthResponse signup(SignupRequest request){
 
-        // Debug (optional)
-        System.out.println("REGISTER email=" + req.getEmail());
-        System.out.println("REGISTER role=" + req.getRole());
+        User user = new User();
 
-        // 1) Create user
-        AppUser user = new AppUser();
+        user.setUsername(request.getUsername());
+        user.setEmail(request.getEmail());
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
 
-        // 2) Set fields
-        user.setEmail(req.getEmail());
-        user.setPasswordHash(encoder.encode(req.getPassword())); // ✅ correct
+        userRepository.save(user);
 
-        // 3) Set role
-        // If req.getRole() = "USER" or "ADMIN"
-        user.setRoles(Set.of(Role.valueOf(req.getRole().toUpperCase())));
+        String token = jwtService.generateToken(user.getUsername());
 
-        // 4) Save
-        users.save(user); // ✅ correct repository name
+        return new AuthResponse(token);
     }
 
-    public AuthResponse login(AuthRequest req) {
-        authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(req.getEmail(), req.getPassword())
-        );
+    public AuthResponse login(LoginRequest request){
 
-        AppUser user = users.findByEmail(req.getEmail()).orElseThrow();
-        String access = jwtService.generateAccessToken(user.getEmail(), user.getRoles());
-        String refresh = createRefreshToken(user);
+        User user = userRepository.findByEmail(request.getEmail()
+                )
+                .orElseThrow();
 
-        return new AuthResponse(access, refresh);
-    }
-
-    public AuthResponse refresh(String refreshToken) {
-        RefreshToken stored = refreshTokens.findByToken(refreshToken)
-                .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
-
-        if (stored.getExpiresAt().isBefore(Instant.now())) {
-            refreshTokens.deleteByToken(refreshToken);
-            throw new IllegalArgumentException("Refresh token expired");
+        if(!passwordEncoder.matches(request.getPassword(), user.getPassword())){
+            throw new RuntimeException("Invalid password");
         }
 
-        AppUser user = stored.getUser();
-        String newAccess = jwtService.generateAccessToken(user.getEmail(), user.getRoles());
-        return new AuthResponse(newAccess, refreshToken);
-    }
+        String token = jwtService.generateToken(user.getUsername());
 
-    public void logout(String refreshToken) {
-        refreshTokens.deleteByToken(refreshToken);
-    }
-
-    private String createRefreshToken(AppUser user) {
-        String token = randomToken(48);
-        Instant exp = Instant.now().plusMillis(refreshExpMs);
-        refreshTokens.save(new RefreshToken(token, user, exp));
-        return token;
-    }
-
-    private static String randomToken(int bytes) {
-        byte[] buf = new byte[bytes];
-        new SecureRandom().nextBytes(buf);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+        return new AuthResponse(token);
     }
 }
